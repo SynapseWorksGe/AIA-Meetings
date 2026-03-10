@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Anthropic
     anthropic_api_key: str = ""
+    anthropic_proxy_url: str = ""
 
     # Telegram
     telegram_bot_token: str = ""

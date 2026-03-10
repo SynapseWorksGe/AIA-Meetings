@@ -3,6 +3,7 @@
 import json
 
 import anthropic
+import httpx
 
 from src.api.config import settings
 
@@ -42,7 +43,13 @@ SUMMARIZE_PROMPT = """\
 
 async def summarize_transcript(transcript_text: str) -> dict:
     """Summarize a meeting transcript using Claude API."""
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    http_client = None
+    if settings.anthropic_proxy_url:
+        http_client = httpx.AsyncClient(proxy=settings.anthropic_proxy_url)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key,
+        http_client=http_client,
+    )
 
     message = await client.messages.create(
         model="claude-sonnet-4-20250514",
