@@ -1,11 +1,14 @@
 """Yandex SpeechKit integration for speech-to-text."""
 
 import json
+import logging
 import time
 
 import httpx
 
 from src.api.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Yandex SpeechKit async recognition API
 RECOGNIZE_URL = "https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize"
@@ -54,6 +57,8 @@ async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(RECOGNIZE_URL, headers=headers, json=body)
+        if response.status_code != 200:
+            logger.error("Yandex SpeechKit error %s: %s", response.status_code, response.text)
         response.raise_for_status()
         result = response.json()
 
