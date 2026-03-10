@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     yandex_api_key: str = ""
     yandex_folder_id: str = ""
 
+    # Yandex Object Storage (S3)
+    yandex_s3_access_key: str = ""
+    yandex_s3_secret_key: str = ""
+    yandex_s3_bucket: str = "aia-meetings-audio"
+
     # Anthropic
     anthropic_api_key: str = ""
 

@@ -1,9 +1,10 @@
 """Yandex SpeechKit integration for speech-to-text."""
 
-import base64
+import asyncio
 import logging
 import os
 import time
+import uuid
 
 import httpx
 
@@ -14,6 +15,9 @@ logger = logging.getLogger(__name__)
 # Yandex SpeechKit async recognition API
 RECOGNIZE_URL = "https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize"
 OPERATION_URL = "https://operation.api.cloud.yandex.net/operations/{operation_id}"
+
+# Yandex Object Storage
+S3_ENDPOINT = "https://storage.yandexcloud.net"
 
 # Map file extensions to Yandex SpeechKit audioEncoding values
 _EXT_TO_ENCODING = {
@@ -36,23 +40,87 @@ def _detect_encoding(file_path: str) -> str:
     return encoding
 
 
-async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
-    """Start async recognition and return operation ID."""
+async def _upload_to_s3(file_path: str) -> str:
+    """Upload audio file to Yandex Object Storage and return the S3 URI."""
+    import boto3
     from pathlib import Path
 
+    if not settings.yandex_s3_access_key or not settings.yandex_s3_secret_key:
+        raise RuntimeError("YANDEX_S3_ACCESS_KEY и YANDEX_S3_SECRET_KEY не заданы в .env")
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=S3_ENDPOINT,
+        aws_access_key_id=settings.yandex_s3_access_key,
+        aws_secret_access_key=settings.yandex_s3_secret_key,
+        region_name="ru-central1",
+    )
+
+    ext = os.path.splitext(file_path)[1].lower()
+    object_key = f"audio/{uuid.uuid4()}{ext}"
+
+    file_data = Path(file_path).read_bytes()
+    file_size_mb = len(file_data) / (1024 * 1024)
+    logger.info("Uploading %.2f MB to s3://%s/%s", file_size_mb, settings.yandex_s3_bucket, object_key)
+
+    if file_size_mb > 50:
+        raise RuntimeError(f"Файл слишком большой ({file_size_mb:.1f} МБ). Максимум 50 МБ.")
+
+    # Run synchronous boto3 upload in a thread pool
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: s3.put_object(
+            Bucket=settings.yandex_s3_bucket,
+            Key=object_key,
+            Body=file_data,
+        ),
+    )
+
+    uri = f"https://{settings.yandex_s3_bucket}.storage.yandexcloud.net/{object_key}"
+    logger.info("Uploaded to %s", uri)
+    return uri
+
+
+async def _cleanup_s3(uri: str) -> None:
+    """Delete audio file from S3 after processing."""
+    try:
+        import boto3
+
+        # Extract bucket and key from URI
+        # Format: https://bucket.storage.yandexcloud.net/key
+        parts = uri.replace("https://", "").split(".storage.yandexcloud.net/", 1)
+        if len(parts) != 2:
+            return
+        bucket, key = parts
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=S3_ENDPOINT,
+            aws_access_key_id=settings.yandex_s3_access_key,
+            aws_secret_access_key=settings.yandex_s3_secret_key,
+            region_name="ru-central1",
+        )
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: s3.delete_object(Bucket=bucket, Key=key),
+        )
+        logger.info("Cleaned up S3 object: %s", uri)
+    except Exception:
+        logger.warning("Failed to cleanup S3 object: %s", uri, exc_info=True)
+
+
+async def start_recognition(file_path: str, language: str = "ru-RU") -> tuple[str, str]:
+    """Start async recognition and return (operation_id, s3_uri)."""
     if not settings.yandex_api_key:
         raise RuntimeError("YANDEX_API_KEY не задан в .env")
     if not settings.yandex_folder_id:
         raise RuntimeError("YANDEX_FOLDER_ID не задан в .env")
 
-    file_data = Path(file_path).read_bytes()
-    file_size_mb = len(file_data) / (1024 * 1024)
-    logger.info("Audio file size: %.2f MB (%s)", file_size_mb, file_path)
-
-    if file_size_mb > 50:
-        raise RuntimeError(f"Файл слишком большой ({file_size_mb:.1f} МБ). Максимум 50 МБ.")
-
-    audio_content = base64.b64encode(file_data).decode()
+    # Upload to Object Storage
+    s3_uri = await _upload_to_s3(file_path)
     audio_encoding = _detect_encoding(file_path)
 
     headers = {
@@ -71,7 +139,7 @@ async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
             "folderId": settings.yandex_folder_id,
         },
         "audio": {
-            "content": audio_content,
+            "uri": s3_uri,
         },
     }
 
@@ -83,6 +151,7 @@ async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
                 response.status_code,
                 response.text,
             )
+            await _cleanup_s3(s3_uri)
             raise RuntimeError(
                 f"Yandex SpeechKit вернул {response.status_code}: {response.text[:300]}"
             )
@@ -90,9 +159,10 @@ async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
 
     operation_id = result.get("id")
     if not operation_id:
+        await _cleanup_s3(s3_uri)
         raise RuntimeError(f"Failed to start recognition: {result}")
 
-    return operation_id
+    return operation_id, s3_uri
 
 
 async def poll_operation(operation_id: str, max_wait: int = 600) -> dict:
@@ -114,15 +184,9 @@ async def poll_operation(operation_id: str, max_wait: int = 600) -> dict:
                     raise RuntimeError(f"Recognition failed: {result['error']}")
                 return result.get("response", {})
 
-            await _async_sleep(5)
+            await asyncio.sleep(5)
 
     raise TimeoutError(f"Recognition did not complete within {max_wait}s")
-
-
-async def _async_sleep(seconds: float) -> None:
-    import asyncio
-
-    await asyncio.sleep(seconds)
 
 
 def parse_recognition_result(response: dict) -> tuple[str, list[dict]]:
@@ -166,7 +230,10 @@ def _duration_to_seconds(duration_str: str) -> float:
 
 
 async def transcribe(file_path: str, language: str = "ru-RU") -> tuple[str, list[dict]]:
-    """Full transcription pipeline: upload → recognize → parse."""
-    operation_id = await start_recognition(file_path, language)
-    response = await poll_operation(operation_id)
-    return parse_recognition_result(response)
+    """Full transcription pipeline: upload to S3 → recognize → parse → cleanup."""
+    operation_id, s3_uri = await start_recognition(file_path, language)
+    try:
+        response = await poll_operation(operation_id)
+        return parse_recognition_result(response)
+    finally:
+        await _cleanup_s3(s3_uri)
