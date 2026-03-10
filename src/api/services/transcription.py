@@ -1,7 +1,8 @@
 """Yandex SpeechKit integration for speech-to-text."""
 
-import json
+import base64
 import logging
+import os
 import time
 
 import httpx
@@ -14,26 +15,45 @@ logger = logging.getLogger(__name__)
 RECOGNIZE_URL = "https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize"
 OPERATION_URL = "https://operation.api.cloud.yandex.net/operations/{operation_id}"
 
+# Map file extensions to Yandex SpeechKit audioEncoding values
+_EXT_TO_ENCODING = {
+    ".ogg": "OGG_OPUS",
+    ".opus": "OGG_OPUS",
+    ".mp3": "MP3",
+    ".wav": "LINEAR16_PCM",
+    ".flac": "LINEAR16_PCM",
+    ".m4a": "MP3",
+    ".webm": "OGG_OPUS",
+    ".mp4": "MP3",
+}
 
-async def upload_to_yandex_storage(file_path: str) -> str:
-    """Upload audio file and return URI for SpeechKit.
 
-    For MVP, we use base64-encoded content directly.
-    In production, upload to Yandex Object Storage and return s3 URI.
-    """
-    import base64
-    from pathlib import Path
-
-    content = Path(file_path).read_bytes()
-    return base64.b64encode(content).decode()
+def _detect_encoding(file_path: str) -> str:
+    """Detect audioEncoding from file extension."""
+    ext = os.path.splitext(file_path)[1].lower()
+    encoding = _EXT_TO_ENCODING.get(ext, "OGG_OPUS")
+    logger.info("File %s -> audioEncoding=%s", ext, encoding)
+    return encoding
 
 
 async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
     """Start async recognition and return operation ID."""
-    import base64
     from pathlib import Path
 
-    audio_content = base64.b64encode(Path(file_path).read_bytes()).decode()
+    if not settings.yandex_api_key:
+        raise RuntimeError("YANDEX_API_KEY не задан в .env")
+    if not settings.yandex_folder_id:
+        raise RuntimeError("YANDEX_FOLDER_ID не задан в .env")
+
+    file_data = Path(file_path).read_bytes()
+    file_size_mb = len(file_data) / (1024 * 1024)
+    logger.info("Audio file size: %.2f MB (%s)", file_size_mb, file_path)
+
+    if file_size_mb > 50:
+        raise RuntimeError(f"Файл слишком большой ({file_size_mb:.1f} МБ). Максимум 50 МБ.")
+
+    audio_content = base64.b64encode(file_data).decode()
+    audio_encoding = _detect_encoding(file_path)
 
     headers = {
         "Authorization": f"Api-Key {settings.yandex_api_key}",
@@ -45,7 +65,7 @@ async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
             "specification": {
                 "languageCode": language,
                 "model": "general",
-                "audioEncoding": "AUTO",
+                "audioEncoding": audio_encoding,
                 "rawResults": True,
             },
             "folderId": settings.yandex_folder_id,
@@ -58,8 +78,14 @@ async def start_recognition(file_path: str, language: str = "ru-RU") -> str:
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(RECOGNIZE_URL, headers=headers, json=body)
         if response.status_code != 200:
-            logger.error("Yandex SpeechKit error %s: %s", response.status_code, response.text)
-        response.raise_for_status()
+            logger.error(
+                "Yandex SpeechKit error %s: %s",
+                response.status_code,
+                response.text,
+            )
+            raise RuntimeError(
+                f"Yandex SpeechKit вернул {response.status_code}: {response.text[:300]}"
+            )
         result = response.json()
 
     operation_id = result.get("id")
