@@ -34,6 +34,7 @@ async def cmd_start(message: Message):
         "<b>Команды:</b>\n"
         "/meetings — список последних встреч\n"
         "/meeting &lt;id&gt; — результат встречи\n"
+        "/settings — выбор модели AI\n"
         "/help — справка"
     )
 
@@ -48,7 +49,8 @@ async def cmd_help(message: Message):
         "- Добавьте подпись к файлу — она станет названием встречи\n\n"
         "<b>Команды:</b>\n"
         "/meetings — 10 последних встреч\n"
-        "/meeting &lt;id&gt; — подробный результат\n\n"
+        "/meeting &lt;id&gt; — подробный результат\n"
+        "/settings — выбор модели и API-ключ\n\n"
         "<b>Поддерживаемые форматы:</b> mp3, wav, ogg, m4a, webm, flac\n"
         "<b>Максимальный размер:</b> 50 МБ (ограничение Telegram)"
     )

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import selectinload
 
 from src.api.config import settings
-from src.api.models.meeting import Meeting, MeetingStatus, Summary, Transcript
+from src.api.models.meeting import AVAILABLE_MODELS, Meeting, MeetingStatus, Summary, Transcript, UserSettings
 from src.api.services.summarization import summarize_transcript
 from src.api.services.transcription import transcribe
 
@@ -135,13 +135,35 @@ async def _process_audio(
             f"📝 Транскрипция готова ({word_count} слов). Генерирую саммари..."
         )
 
-        # Step 2: Summarization
+        # Step 2: Summarization — load user settings
         async with session_factory() as db:
             meeting = await _get_meeting(db, meeting_id)
             meeting.status = MeetingStatus.summarizing
             await db.commit()
 
-        summary_data = await summarize_transcript(full_text)
+            result = await db.execute(
+                select(UserSettings).where(
+                    UserSettings.telegram_user_id == message.from_user.id
+                )
+            )
+            user_settings = result.scalar_one_or_none()
+
+        model_key = user_settings.selected_model if user_settings else "claude-sonnet-4"
+        user_anthropic_key = user_settings.anthropic_api_key if user_settings else None
+        user_openai_key = user_settings.openai_api_key if user_settings else None
+
+        model_label = AVAILABLE_MODELS.get(model_key, {}).get("label", model_key)
+        await _update_status(
+            status_msg,
+            f"🧠 Генерирую саммари ({model_label})..."
+        )
+
+        summary_data = await summarize_transcript(
+            full_text,
+            model_key=model_key,
+            user_anthropic_key=user_anthropic_key,
+            user_openai_key=user_openai_key,
+        )
 
         async with session_factory() as db:
             summary = Summary(
@@ -150,6 +172,7 @@ async def _process_audio(
                 action_items=summary_data["action_items"],
                 key_decisions=summary_data["key_decisions"],
                 participants=summary_data["participants"],
+                model_used=summary_data.get("model_used", "unknown"),
             )
             db.add(summary)
             meeting = await _get_meeting(db, meeting_id)
