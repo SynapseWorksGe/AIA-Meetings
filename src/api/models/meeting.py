@@ -14,6 +14,7 @@ class Base(DeclarativeBase):
 class AIProvider(str, enum.Enum):
     anthropic = "anthropic"
     openai = "openai"
+    yandex = "yandex"
 
 
 AVAILABLE_MODELS = {
@@ -21,6 +22,8 @@ AVAILABLE_MODELS = {
     "claude-haiku-4": {"provider": AIProvider.anthropic, "model_id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
     "gpt-4o": {"provider": AIProvider.openai, "model_id": "gpt-4o", "label": "GPT-4o"},
     "gpt-4o-mini": {"provider": AIProvider.openai, "model_id": "gpt-4o-mini", "label": "GPT-4o mini"},
+    "yandexgpt": {"provider": AIProvider.yandex, "model_id": "yandexgpt/latest", "label": "YandexGPT Pro"},
+    "yandexgpt-lite": {"provider": AIProvider.yandex, "model_id": "yandexgpt-lite/latest", "label": "YandexGPT Lite"},
 }
 
 
@@ -100,6 +103,8 @@ class UserSettings(Base):
     selected_model: Mapped[str] = mapped_column(String(50), default="claude-sonnet-4")
     anthropic_api_key: Mapped[str | None] = mapped_column(String(500))
     openai_api_key: Mapped[str | None] = mapped_column(String(500))
+    yandex_api_key: Mapped[str | None] = mapped_column(String(500))
+    yandex_folder_id: Mapped[str | None] = mapped_column(String(100))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

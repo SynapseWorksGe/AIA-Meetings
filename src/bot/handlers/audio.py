@@ -151,6 +151,8 @@ async def _process_audio(
         model_key = user_settings.selected_model if user_settings else "claude-sonnet-4"
         user_anthropic_key = user_settings.anthropic_api_key if user_settings else None
         user_openai_key = user_settings.openai_api_key if user_settings else None
+        user_yandex_key = user_settings.yandex_api_key if user_settings else None
+        user_yandex_folder_id = user_settings.yandex_folder_id if user_settings else None
 
         model_label = AVAILABLE_MODELS.get(model_key, {}).get("label", model_key)
         await _update_status(
@@ -163,6 +165,8 @@ async def _process_audio(
             model_key=model_key,
             user_anthropic_key=user_anthropic_key,
             user_openai_key=user_openai_key,
+            user_yandex_key=user_yandex_key,
+            user_yandex_folder_id=user_yandex_folder_id,
         )
 
         async with session_factory() as db:

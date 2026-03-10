@@ -96,6 +96,38 @@ async def _call_openai(transcript_text: str, model_id: str, api_key: str) -> str
         return data["choices"][0]["message"]["content"]
 
 
+async def _call_yandex(
+    transcript_text: str, model_id: str, api_key: str, folder_id: str
+) -> str:
+    """Call YandexGPT API."""
+    model_uri = f"gpt://{folder_id}/{model_id}"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
+        response = await client.post(
+            "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+            headers={
+                "Authorization": f"Api-Key {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "modelUri": model_uri,
+                "completionOptions": {
+                    "stream": False,
+                    "temperature": 0.3,
+                    "maxTokens": 4096,
+                },
+                "messages": [
+                    {
+                        "role": "user",
+                        "text": SUMMARIZE_PROMPT.format(transcript=transcript_text),
+                    }
+                ],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["result"]["alternatives"][0]["message"]["text"]
+
+
 def _parse_response(response_text: str) -> dict:
     """Parse JSON from model response."""
     try:
@@ -120,6 +152,8 @@ async def summarize_transcript(
     model_key: str = "claude-sonnet-4",
     user_anthropic_key: str | None = None,
     user_openai_key: str | None = None,
+    user_yandex_key: str | None = None,
+    user_yandex_folder_id: str | None = None,
 ) -> dict:
     """Summarize a meeting transcript using the selected AI model."""
     model_info = AVAILABLE_MODELS.get(model_key)
@@ -140,6 +174,12 @@ async def summarize_transcript(
         if not api_key:
             raise ValueError("OpenAI API key not set. Use /settings to add your key.")
         response_text = await _call_openai(transcript_text, model_id, api_key)
+    elif provider == AIProvider.yandex:
+        api_key = user_yandex_key or settings.yandex_api_key
+        folder_id = user_yandex_folder_id or settings.yandex_folder_id
+        if not api_key or not folder_id:
+            raise ValueError("YandexGPT requires API key and folder ID. Use /settings to set them.")
+        response_text = await _call_yandex(transcript_text, model_id, api_key, folder_id)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 

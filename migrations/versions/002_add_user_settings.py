@@ -19,6 +19,8 @@ def upgrade() -> None:
         sa.Column("selected_model", sa.String(50), server_default="claude-sonnet-4", nullable=False),
         sa.Column("anthropic_api_key", sa.String(500), nullable=True),
         sa.Column("openai_api_key", sa.String(500), nullable=True),
+        sa.Column("yandex_api_key", sa.String(500), nullable=True),
+        sa.Column("yandex_folder_id", sa.String(100), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 

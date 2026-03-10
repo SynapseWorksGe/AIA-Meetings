@@ -19,6 +19,7 @@ router = Router()
 
 class SettingsStates(StatesGroup):
     waiting_api_key = State()
+    waiting_yandex_folder_id = State()
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
@@ -69,13 +70,21 @@ def _settings_text(us: UserSettings) -> str:
         has_key = bool(us.anthropic_api_key or settings.anthropic_api_key)
     elif provider == AIProvider.openai:
         has_key = bool(us.openai_api_key)
+    elif provider == AIProvider.yandex:
+        yandex_key = us.yandex_api_key or settings.yandex_api_key
+        yandex_folder = us.yandex_folder_id or settings.yandex_folder_id
+        has_key = bool(yandex_key and yandex_folder)
 
     key_status = "✅ установлен" if has_key else "❌ не указан"
+
+    extra = ""
+    if provider == AIProvider.yandex and not has_key:
+        extra = "\n⚠️ Для YandexGPT нужны API-ключ и Folder ID"
 
     return (
         "<b>⚙️ Настройки</b>\n\n"
         f"<b>Модель:</b> {model_label}\n"
-        f"<b>API-ключ ({provider.value}):</b> {key_status}\n\n"
+        f"<b>API-ключ ({provider.value}):</b> {key_status}{extra}\n\n"
         "Выберите модель для суммаризации:"
     )
 
@@ -115,6 +124,11 @@ async def on_model_selected(callback: CallbackQuery):
         needs_key = True
     elif provider == AIProvider.openai and not us.openai_api_key:
         needs_key = True
+    elif provider == AIProvider.yandex:
+        yandex_key = us.yandex_api_key or settings.yandex_api_key
+        yandex_folder = us.yandex_folder_id or settings.yandex_folder_id
+        if not yandex_key or not yandex_folder:
+            needs_key = True
 
     await callback.message.edit_text(
         _settings_text(us),
@@ -185,6 +199,17 @@ async def on_api_key_received(message: Message, state: FSMContext):
             us.anthropic_api_key = api_key
         elif provider == "openai":
             us.openai_api_key = api_key
+        elif provider == "yandex":
+            us.yandex_api_key = api_key
+            await db.commit()
+            # Ask for folder_id next
+            await state.set_state(SettingsStates.waiting_yandex_folder_id)
+            await message.answer(
+                "✅ API-ключ Yandex сохранён!\n\n"
+                "Теперь отправьте <b>Folder ID</b> вашего каталога в Yandex Cloud.\n"
+                "Его можно найти в консоли: https://console.yandex.cloud/",
+            )
+            return
         await db.commit()
         await db.refresh(us)
 
@@ -192,4 +217,30 @@ async def on_api_key_received(message: Message, state: FSMContext):
     await message.answer(
         f"✅ API-ключ для <b>{provider.title()}</b> сохранён!\n\n"
         "Используйте /settings для просмотра настроек.",
+    )
+
+
+@router.message(SettingsStates.waiting_yandex_folder_id)
+async def on_yandex_folder_received(message: Message, state: FSMContext):
+    folder_id = message.text.strip()
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if not folder_id or len(folder_id) < 5:
+        await message.answer("❌ Некорректный Folder ID. Попробуйте ещё раз.")
+        return
+
+    session_factory = _get_session_factory()
+    async with session_factory() as db:
+        us = await _get_or_create_settings(db, message.from_user.id)
+        us.yandex_folder_id = folder_id
+        await db.commit()
+
+    await state.clear()
+    await message.answer(
+        "✅ Yandex Folder ID сохранён!\n\n"
+        "Настройка YandexGPT завершена. Используйте /settings для просмотра.",
     )
