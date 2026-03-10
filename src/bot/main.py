@@ -7,6 +7,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+import sqlalchemy as sa
+
 from src.api.config import settings
 from src.api.database import engine
 from src.api.models.meeting import Base
@@ -28,6 +30,18 @@ async def main():
     # Ensure all tables exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add columns that may be missing in existing tables
+        for col_name, col_type in [
+            ("yandex_api_key", "VARCHAR(500)"),
+            ("yandex_folder_id", "VARCHAR(100)"),
+        ]:
+            try:
+                await conn.execute(
+                    sa.text(f"ALTER TABLE user_settings ADD COLUMN {col_name} {col_type}")
+                )
+                logger.info("Added column user_settings.%s", col_name)
+            except Exception:
+                pass  # column already exists
     logger.info("Database tables ensured")
 
     bot = Bot(
