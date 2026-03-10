@@ -45,7 +45,7 @@ async def summarize_transcript(transcript_text: str) -> dict:
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     message = await client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-4-20250514",
         max_tokens=4096,
         messages=[
             {
