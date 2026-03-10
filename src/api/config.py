@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str = ""
 
+    # Telegram
+    telegram_bot_token: str = ""
+
     # Storage
     storage_type: str = "local"
     storage_path: str = "/data/audio"

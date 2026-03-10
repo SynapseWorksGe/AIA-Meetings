@@ -76,12 +76,27 @@ async def _process_meeting(meeting_id: str) -> None:
             meeting.status = MeetingStatus.done
             await db.commit()
 
+            # Send webhook notifications
+            try:
+                from src.api.services.notifications import notify_webhooks
+
+                await notify_webhooks(db, meeting, "meeting.completed")
+            except Exception:
+                logger.warning(f"Failed to send webhook for meeting {meeting_id}", exc_info=True)
+
             logger.info(f"Meeting {meeting_id} processed successfully")
 
         except Exception as e:
             meeting.status = MeetingStatus.error
             meeting.error_message = str(e)[:2000]
             await db.commit()
+
+            try:
+                from src.api.services.notifications import notify_webhooks
+
+                await notify_webhooks(db, meeting, "meeting.error")
+            except Exception:
+                logger.warning(f"Failed to send error webhook for meeting {meeting_id}", exc_info=True)
             logger.exception(f"Failed to process meeting {meeting_id}")
             raise
 

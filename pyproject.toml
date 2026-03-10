@@ -18,7 +18,11 @@ dependencies = [
     "python-multipart>=0.0.12",
     "aiofiles>=24.1.0",
     "python-dotenv>=1.0.1",
+    "aiogram>=3.14.0",
 ]
+
+[project.scripts]
+aia-meetings = "src.cli.main:main"
 
 [project.optional-dependencies]
 dev = [

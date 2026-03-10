@@ -8,6 +8,7 @@ from src.api.database import engine
 from src.api.models.meeting import Base
 from src.api.routes.auth import router as auth_router
 from src.api.routes.meetings import router as meetings_router
+from src.api.routes.webhooks import router as webhooks_router
 
 
 @asynccontextmanager
@@ -21,12 +22,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AIA-Meetings",
     description="Meeting transcription and summarization service",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
 app.include_router(auth_router)
 app.include_router(meetings_router)
+app.include_router(webhooks_router)
 
 
 @app.get("/health")
