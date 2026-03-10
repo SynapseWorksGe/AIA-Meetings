@@ -45,7 +45,10 @@ async def summarize_transcript(transcript_text: str) -> dict:
     """Summarize a meeting transcript using Claude API."""
     http_client = None
     if settings.anthropic_proxy_url:
-        http_client = httpx.AsyncClient(proxy=settings.anthropic_proxy_url)
+        http_client = httpx.AsyncClient(
+            proxy=settings.anthropic_proxy_url,
+            timeout=httpx.Timeout(600.0, connect=30.0),
+        )
     client = anthropic.AsyncAnthropic(
         api_key=settings.anthropic_api_key,
         http_client=http_client,
