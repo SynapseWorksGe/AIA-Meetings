@@ -92,14 +92,18 @@ def _settings_text(us: UserSettings) -> str:
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, state: FSMContext):
     await state.clear()
-    session_factory = _get_session_factory()
-    async with session_factory() as db:
-        us = await _get_or_create_settings(db, message.from_user.id)
+    try:
+        session_factory = _get_session_factory()
+        async with session_factory() as db:
+            us = await _get_or_create_settings(db, message.from_user.id)
 
-    await message.answer(
-        _settings_text(us),
-        reply_markup=_build_model_keyboard(us.selected_model),
-    )
+        await message.answer(
+            _settings_text(us),
+            reply_markup=_build_model_keyboard(us.selected_model),
+        )
+    except Exception as e:
+        logger.exception("Error in /settings handler")
+        await message.answer(f"❌ Ошибка при загрузке настроек: {e}")
 
 
 @router.callback_query(F.data.startswith("set_model:"))

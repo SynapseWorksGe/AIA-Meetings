@@ -8,6 +8,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from src.api.config import settings
+from src.api.database import engine
+from src.api.models.meeting import Base
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from src.bot.handlers.audio import router as audio_router
@@ -22,6 +24,11 @@ async def main():
     if not settings.telegram_bot_token:
         logger.error("TELEGRAM_BOT_TOKEN is not set")
         return
+
+    # Ensure all tables exist
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables ensured")
 
     bot = Bot(
         token=settings.telegram_bot_token,
