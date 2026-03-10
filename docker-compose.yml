@@ -2,7 +2,7 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file: .env
     volumes:
       - audio_data:/data/audio
@@ -34,8 +34,7 @@ services:
       POSTGRES_DB: aia_meetings
     volumes:
       - pg_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # ports exposed only within docker network; use 'make db-shell' for access
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aia -d aia_meetings"]
       interval: 5s
@@ -56,8 +55,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

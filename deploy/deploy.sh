@@ -138,7 +138,6 @@ services:
 
   db:
     restart: always
-    ports: !override []
     logging:
       driver: json-file
       options:
@@ -151,7 +150,6 @@ services:
 
   redis:
     restart: always
-    ports: !override []
     logging:
       driver: json-file
       options:
@@ -164,16 +162,15 @@ services:
 YAML
 log "Production compose override created"
 
-# ── 7. Firewall ────────────────────────────────────────────────────
+# ── 7. Firewall (additive — safe for multi-app servers) ────────────
 log "Configuring firewall..."
-ufw --force reset > /dev/null 2>&1
 ufw default deny incoming > /dev/null 2>&1
 ufw default allow outgoing > /dev/null 2>&1
 ufw allow ssh > /dev/null 2>&1
 ufw allow 80/tcp > /dev/null 2>&1
 ufw allow 443/tcp > /dev/null 2>&1
 ufw --force enable > /dev/null 2>&1
-log "Firewall configured (SSH, HTTP, HTTPS)"
+log "Firewall configured (SSH, HTTP, HTTPS — existing rules preserved)"
 
 # ── 8. Nginx ───────────────────────────────────────────────────────
 log "Configuring Nginx..."
@@ -260,7 +257,10 @@ NGINX
 fi
 
 ln -sf /etc/nginx/sites-available/aia-meetings /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
+# Only remove default if no other apps depend on it
+if [[ ! -f /etc/nginx/sites-available/default-custom ]]; then
+    rm -f /etc/nginx/sites-enabled/default
+fi
 nginx -t && systemctl reload nginx
 log "Nginx configured"
 
