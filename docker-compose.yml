@@ -46,6 +46,18 @@ services:
       retries: 5
     restart: unless-stopped
 
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - telegram_bot_api_data:/var/lib/telegram-bot-api
+    ports:
+      - "127.0.0.1:8081:8081"
+    restart: unless-stopped
+
   bot:
     build: .
     command: python -m src.bot.main
@@ -57,6 +69,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      telegram-bot-api:
+        condition: service_started
     restart: unless-stopped
 
   redis:
@@ -71,3 +85,4 @@ services:
 volumes:
   pg_data:
   audio_data:
+  telegram_bot_api_data:

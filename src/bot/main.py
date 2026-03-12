@@ -5,6 +5,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 
 import sqlalchemy as sa
@@ -44,9 +45,21 @@ async def main():
                 pass  # column already exists
     logger.info("Database tables ensured")
 
+    # Use local Telegram Bot API server if configured (removes 20 MB file limit)
+    session = None
+    if settings.telegram_bot_api_url:
+        session = AiohttpSession(api=settings.telegram_bot_api_url)
+        logger.info("Using local Bot API server: %s", settings.telegram_bot_api_url)
+    else:
+        logger.warning(
+            "TELEGRAM_BOT_API_URL not set — using official API (20 MB file limit). "
+            "Set TELEGRAM_BOT_API_URL for large file support."
+        )
+
     bot = Bot(
         token=settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session,
     )
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(commands_router)

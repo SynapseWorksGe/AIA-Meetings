@@ -26,16 +26,22 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-MAX_TELEGRAM_FILE_SIZE = 20 * 1024 * 1024  # 20 MB Telegram Bot API limit
+_OFFICIAL_API_LIMIT = 20 * 1024 * 1024   # 20 MB — official Telegram Bot API
+_LOCAL_API_LIMIT = 2000 * 1024 * 1024    # 2 GB — local Bot API server
+
+
+def _get_max_file_size() -> int:
+    return _LOCAL_API_LIMIT if settings.telegram_bot_api_url else _OFFICIAL_API_LIMIT
 
 
 async def _download_file(bot: Bot, file_id: str, suffix: str, file_size: int | None = None) -> str:
     """Download a file from Telegram. Raises RuntimeError if too large."""
-    if file_size and file_size > MAX_TELEGRAM_FILE_SIZE:
+    max_size = _get_max_file_size()
+    if file_size and file_size > max_size:
+        limit_mb = max_size / (1024 * 1024)
         raise RuntimeError(
             f"Файл слишком большой ({file_size / 1024 / 1024:.1f} МБ). "
-            f"Лимит Telegram Bot API — 20 МБ. "
-            f"Отправьте файл меньшего размера или сожмите аудио."
+            f"Лимит — {limit_mb:.0f} МБ."
         )
     file = await bot.get_file(file_id)
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:

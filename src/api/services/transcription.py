@@ -102,8 +102,8 @@ async def _upload_to_s3(file_path: str) -> str:
     file_size_mb = len(file_data) / (1024 * 1024)
     logger.info("Uploading %.2f MB to s3://%s/%s", file_size_mb, settings.yandex_s3_bucket, object_key)
 
-    if file_size_mb > 50:
-        raise RuntimeError(f"Файл слишком большой ({file_size_mb:.1f} МБ). Максимум 50 МБ.")
+    if file_size_mb > 500:
+        raise RuntimeError(f"Файл слишком большой ({file_size_mb:.1f} МБ). Максимум 500 МБ.")
 
     # Run synchronous boto3 upload in a thread pool
     loop = asyncio.get_event_loop()

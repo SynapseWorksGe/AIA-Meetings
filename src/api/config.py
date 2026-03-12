@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     # Telegram
     telegram_bot_token: str = ""
+    telegram_bot_api_url: str = ""  # Local Bot API server URL, e.g. http://telegram-bot-api:8081
+    telegram_api_id: str = ""       # Required for local Bot API server (from https://my.telegram.org)
+    telegram_api_hash: str = ""     # Required for local Bot API server
 
     # Storage
     storage_type: str = "local"
