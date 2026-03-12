@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import tempfile
 import time
 import uuid
 
@@ -26,10 +27,48 @@ _EXT_TO_ENCODING = {
     ".mp3": "MP3",
     ".wav": "LINEAR16_PCM",
     ".flac": "LINEAR16_PCM",
-    ".m4a": "MP3",
-    ".webm": "OGG_OPUS",
-    ".mp4": "MP3",
 }
+
+# Formats that need conversion to OGG Opus before sending to SpeechKit
+_NEEDS_CONVERSION = {".m4a", ".mp4", ".webm", ".aac", ".wma"}
+
+
+async def _convert_to_ogg(file_path: str) -> str | None:
+    """Convert audio file to OGG Opus using ffmpeg. Returns new path or None if not needed."""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in _NEEDS_CONVERSION:
+        return None
+
+    ogg_path = tempfile.mktemp(suffix=".ogg")
+    cmd = [
+        "ffmpeg", "-i", file_path,
+        "-vn",                  # no video
+        "-acodec", "libopus",   # Opus codec
+        "-ac", "1",             # mono
+        "-ar", "48000",         # 48kHz sample rate
+        "-b:a", "64k",          # bitrate
+        "-y",                   # overwrite
+        ogg_path,
+    ]
+
+    logger.info("Converting %s -> OGG Opus: %s", ext, ogg_path)
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        logger.error("ffmpeg conversion failed: %s", stderr.decode()[-500:])
+        try:
+            os.unlink(ogg_path)
+        except OSError:
+            pass
+        raise RuntimeError(f"Не удалось сконвертировать аудио ({ext}). Убедитесь, что ffmpeg установлен.")
+
+    logger.info("Conversion complete: %s (%.2f MB)", ogg_path, os.path.getsize(ogg_path) / 1024 / 1024)
+    return ogg_path
 
 
 def _detect_encoding(file_path: str) -> str:
@@ -230,10 +269,20 @@ def _duration_to_seconds(duration_str: str) -> float:
 
 
 async def transcribe(file_path: str, language: str = "ru-RU") -> tuple[str, list[dict]]:
-    """Full transcription pipeline: upload to S3 → recognize → parse → cleanup."""
-    operation_id, s3_uri = await start_recognition(file_path, language)
+    """Full transcription pipeline: convert (if needed) → upload to S3 → recognize → parse → cleanup."""
+    converted_path = await _convert_to_ogg(file_path)
+    actual_path = converted_path or file_path
+
     try:
-        response = await poll_operation(operation_id)
-        return parse_recognition_result(response)
+        operation_id, s3_uri = await start_recognition(actual_path, language)
+        try:
+            response = await poll_operation(operation_id)
+            return parse_recognition_result(response)
+        finally:
+            await _cleanup_s3(s3_uri)
     finally:
-        await _cleanup_s3(s3_uri)
+        if converted_path:
+            try:
+                os.unlink(converted_path)
+            except OSError:
+                pass
