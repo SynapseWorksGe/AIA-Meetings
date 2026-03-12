@@ -26,6 +26,23 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+MAX_TELEGRAM_FILE_SIZE = 20 * 1024 * 1024  # 20 MB Telegram Bot API limit
+
+
+async def _download_file(bot: Bot, file_id: str, suffix: str, file_size: int | None = None) -> str:
+    """Download a file from Telegram. Raises RuntimeError if too large."""
+    if file_size and file_size > MAX_TELEGRAM_FILE_SIZE:
+        raise RuntimeError(
+            f"Файл слишком большой ({file_size / 1024 / 1024:.1f} МБ). "
+            f"Лимит Telegram Bot API — 20 МБ. "
+            f"Отправьте файл меньшего размера или сожмите аудио."
+        )
+    file = await bot.get_file(file_id)
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        await bot.download_file(file.file_path, tmp)
+        return tmp.name
+
+
 @router.message(F.voice)
 async def handle_voice(message: Message, bot: Bot):
     """Handle voice messages."""
@@ -34,10 +51,12 @@ async def handle_voice(message: Message, bot: Bot):
 
     status_msg = await message.answer("⏳ Получил голосовое сообщение. Скачиваю...")
 
-    file = await bot.get_file(voice.file_id)
-    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-        await bot.download_file(file.file_path, tmp)
-        tmp_path = tmp.name
+    try:
+        tmp_path = await _download_file(bot, voice.file_id, ".ogg", voice.file_size)
+    except Exception as e:
+        logger.exception("Failed to download voice message")
+        await status_msg.edit_text(f"❌ Не удалось скачать: {e}")
+        return
 
     await _process_audio(message, bot, status_msg, tmp_path, title, voice.duration)
 
@@ -51,10 +70,12 @@ async def handle_audio(message: Message, bot: Bot):
 
     status_msg = await message.answer(f"⏳ Получил файл <b>{audio.file_name}</b>. Скачиваю...")
 
-    file = await bot.get_file(audio.file_id)
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        await bot.download_file(file.file_path, tmp)
-        tmp_path = tmp.name
+    try:
+        tmp_path = await _download_file(bot, audio.file_id, ext, audio.file_size)
+    except Exception as e:
+        logger.exception("Failed to download audio file")
+        await status_msg.edit_text(f"❌ Не удалось скачать: {e}")
+        return
 
     await _process_audio(message, bot, status_msg, tmp_path, title, audio.duration)
 
@@ -75,10 +96,12 @@ async def handle_document(message: Message, bot: Bot):
 
     status_msg = await message.answer(f"⏳ Получил файл <b>{doc.file_name}</b>. Скачиваю...")
 
-    file = await bot.get_file(doc.file_id)
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        await bot.download_file(file.file_path, tmp)
-        tmp_path = tmp.name
+    try:
+        tmp_path = await _download_file(bot, doc.file_id, ext, doc.file_size)
+    except Exception as e:
+        logger.exception("Failed to download document")
+        await status_msg.edit_text(f"❌ Не удалось скачать: {e}")
+        return
 
     await _process_audio(message, bot, status_msg, tmp_path, title, None)
 
